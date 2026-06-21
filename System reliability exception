@@ -1,20 +1,6 @@
 package drone;
-
-/**
- * Custom exception representing a critical system reliability failure.
- * Thrown when two consecutive failures occur, triggering SAFE MODE.
- *
- * @author Student
- * @version 1.0
- */
 public class SystemReliabilityException extends Exception {
-
-    /**
-     * Constructs a SystemReliabilityException with a detail message.
-     * @param message description of the reliability failure
-     */
     public SystemReliabilityException(String message) {
         super(message);
     }
-
 } // class SystemReliabilityException
