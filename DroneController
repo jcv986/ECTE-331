@@ -1,0 +1,171 @@
+package drone;
+
+import java.util.Random;
+
+
+public class DroneController {
+
+    static final int MIN_ALTITUDE = 0;
+    static final int MAX_ALTITUDE = 200;
+    static final int BASELINE = 100;
+    static Random random = new Random();
+    static int lastValidAltitude = BASELINE;
+    static int consecutiveFailures = 0;
+    static final int CYCLES = 10;
+    static DroneLogger logger = new DroneLogger("log.txt");
+    static int readSensor(String sensorID) throws SensorReadException {
+        int chance = random.nextInt(100);
+
+        if (chance < 15) {
+            throw new SensorReadException(sensorID + " hardware failure.");
+        } else if (chance < 30) {
+            int corrupted = 201 + random.nextInt(100);
+            System.out.println("  [CORRUPTED] " + sensorID + " = " + corrupted);
+            logger.log("CORRUPTED READING | " + sensorID + " = " + corrupted);
+            return corrupted;
+        } else {
+            int value = BASELINE + random.nextInt(21) - 10;
+            return value;
+        }
+    }
+
+    static boolean isValid(int value) {
+        return value >= MIN_ALTITUDE && value <= MAX_ALTITUDE;
+    }
+
+    
+    static int majorityVote(int a, int b, int c,
+                            boolean aOk, boolean bOk, boolean cOk) {
+        if (aOk && bOk && a == b) {
+            logger.log("MAJORITY DECISION | Sensors A & B agree: altitude = " + a);
+            System.out.println("  [VOTE] Sensors A & B agree => altitude = " + a);
+            return a;
+        }
+        if (aOk && cOk && a == c) {
+            logger.log("MAJORITY DECISION | Sensors A & C agree: altitude = " + a);
+            System.out.println("  [VOTE] Sensors A & C agree => altitude = " + a);
+            return a;
+        }
+        if (bOk && cOk && b == c) {
+            logger.log("MAJORITY DECISION | Sensors B & C agree: altitude = " + b);
+            System.out.println("  [VOTE] Sensors B & C agree => altitude = " + b);
+            return b;
+        }
+        return -1;
+    }
+
+    public static void main(String[] args) {
+
+        System.out.println("=== Drone Navigation System Started ===\n");
+        logger.log("=== Drone Navigation System Started ===");
+
+        try {
+            for (int cycle = 1; cycle <= CYCLES; cycle++) {
+                System.out.println("-- Cycle " + cycle + " --");
+                logger.log("-- Cycle " + cycle + " --");
+
+                int readA = -1, readB = -1, readC = -1;
+                boolean aOk = false, bOk = false, cOk = false;
+
+                // Sensor A
+                try {
+                    readA = readSensor("Sensor A");
+                    if (isValid(readA)) {
+                        aOk = true;
+                        System.out.println("  Sensor A = " + readA);
+                    } else {
+                        System.out.println("  [OUTLIER] Sensor A = " + readA + " (out of range, ignored)");
+                        logger.log("OUTLIER | Sensor A = " + readA);
+                    }
+                } catch (SensorReadException e) {
+                    System.out.println("  [FAILURE] Sensor A: " + e.getMessage());
+                    logger.log("SENSOR FAILURE | Sensor A: " + e.getMessage());
+                }
+
+                // Sensor B
+                try {
+                    readB = readSensor("Sensor B");
+                    if (isValid(readB)) {
+                        bOk = true;
+                        System.out.println("  Sensor B = " + readB);
+                    } else {
+                        System.out.println("  [OUTLIER] Sensor B = " + readB + " (out of range, ignored)");
+                        logger.log("OUTLIER | Sensor B = " + readB);
+                    }
+                } catch (SensorReadException e) {
+                    System.out.println("  [FAILURE] Sensor B: " + e.getMessage());
+                    logger.log("SENSOR FAILURE | Sensor B: " + e.getMessage());
+                }
+
+                // Sensor C
+                try {
+                    readC = readSensor("Sensor C");
+                    if (isValid(readC)) {
+                        cOk = true;
+                        System.out.println("  Sensor C = " + readC);
+                    } else {
+                        System.out.println("  [OUTLIER] Sensor C = " + readC + " (out of range, ignored)");
+                        logger.log("OUTLIER | Sensor C = " + readC);
+                    }
+                } catch (SensorReadException e) {
+                    System.out.println("  [FAILURE] Sensor C: " + e.getMessage());
+                    logger.log("SENSOR FAILURE | Sensor C: " + e.getMessage());
+                }
+
+                // Count valid readings
+                int validCount = (aOk ? 1 : 0) + (bOk ? 1 : 0) + (cOk ? 1 : 0);
+
+                // Reliability check
+                if (validCount < 2) {
+                    consecutiveFailures++;
+                    System.out.println("  [RELIABILITY] Only " + validCount + " valid sensor(s). Failure count: " + consecutiveFailures);
+                    logger.log("RELIABILITY FAILURE | Valid sensors: " + validCount + " | Consecutive failures: " + consecutiveFailures);
+
+                    if (consecutiveFailures >= 2) {
+                        throw new SystemReliabilityException("Two consecutive reliability failures. Entering SAFE MODE.");
+                    }
+
+                    System.out.println("  [FALLBACK] Using last valid altitude: " + lastValidAltitude + " m");
+                    logger.log("FALLBACK DECISION | Using last valid altitude: " + lastValidAltitude + " m");
+                    continue;
+                }
+
+                // Majority voting
+                int decided = majorityVote(readA, readB, readC, aOk, bOk, cOk);
+
+                if (decided == -1) {
+                    consecutiveFailures++;
+                    System.out.println("  [NO MAJORITY] All sensors differ. Failure count: " + consecutiveFailures);
+                    logger.log("NO MAJORITY | All valid sensors differ. Consecutive failures: " + consecutiveFailures);
+
+                    if (consecutiveFailures >= 2) {
+                        throw new SystemReliabilityException("Two consecutive reliability failures. Entering SAFE MODE.");
+                    }
+
+                    System.out.println("  [FALLBACK] Using last valid altitude: " + lastValidAltitude + " m");
+                    logger.log("FALLBACK DECISION | Using last valid altitude: " + lastValidAltitude + " m");
+
+                } else {
+                    consecutiveFailures = 0;
+                    lastValidAltitude = decided;
+                    System.out.println("  [ALTITUDE] Confirmed altitude: " + decided + " m");
+                    logger.log("CONFIRMED ALTITUDE | " + decided + " m");
+                }
+
+                System.out.println();
+
+            } // end for
+
+        } catch (SystemReliabilityException e) {
+            System.out.println("\n*** SAFE MODE ACTIVATED ***");
+            System.out.println("Reason: " + e.getMessage());
+            logger.log("*** SAFE MODE ACTIVATED *** | " + e.getMessage());
+        }
+
+        System.out.println("\n=== Drone Navigation System Stopped ===");
+        logger.log("=== Drone Navigation System Stopped ===");
+        logger.close();
+
+    } // main
+
+} // class DroneController
